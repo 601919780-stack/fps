@@ -169,11 +169,10 @@
         // ==========================================
         // 填入您本地的相对路径（例如 './images/work1.png'）或网络链接
         const myWorksImages = [
-            'image1.png',
-            'image1.png',
-            'image1.png',
-            'image1.png',
-            'image1.png'
+            'https://via.placeholder.com/600x800/f1f1f1/000000?text=Your+Image+1',
+            'https://via.placeholder.com/600x800/e8e8e8/000000?text=Your+Image+2',
+            'https://via.placeholder.com/600x800/f5f5f5/000000?text=Your+Image+3',
+            'https://via.placeholder.com/600x800/eeeeee/000000?text=Your+Image+4'
         ];
 
         // 作品参数
@@ -315,7 +314,7 @@
              'img_3.jpg',
              'img_4.jpg',
              'img_5.jpg'
-            ]
+            ], // <--- 就是这里补上了逗号
             
             // 作品 2 的详情页图片 (对应上面 myWorksImages 的第 2 张)
             [
@@ -324,7 +323,7 @@
              'img_3.jpg',
              'img_4.jpg',
              'img_5.jpg'
-            ]
+            ], // <--- 这里补上了逗号
             
             // 作品 3 
              [
@@ -333,7 +332,7 @@
              'img_3.jpg',
              'img_4.jpg',
              'img_5.jpg'
-            ]
+            ], // <--- 这里补上了逗号
             
             // 作品 4
              [
@@ -394,7 +393,7 @@
 
             faceDetection.setOptions({
                 model: 'short',
-                minDetectionConfidence: 0.2
+                minDetectionConfidence: 0.5
             });
 
             faceDetection.onResults((results) => {
@@ -407,7 +406,7 @@
                     const faceX = bbox.xCenter - 0.5; 
                     
                     // 放大面部识别控制的视角范围
-                    targetRotY = faceX * 4.0; 
+                    targetRotY = faceX * 2.0; 
                 }
             });
 
