@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>REDesign Portfolio</title>
+    <style>
+        /* 全局样式设定 */
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #ffffff; /* 大面积白色背景 */
+            font-family: 'SimHei', 'Heiti SC', 'Microsoft YaHei', sans-serif; /* 黑体 */
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* 字体通用样式：字间距为-4% */
+        .heiti-text {
+            font-family: 'SimHei', 'Heiti SC', sans-serif;
+            letter-spacing: -0.04em;
+            color: #000000;
+            font-weight: 900;
+        }
+
+        /* UI 层级 */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none; /* 让鼠标穿透UI层，与3D场景交互 */
+            z-index: 10;
+        }
+
+        /* 左上角 REDesign */
+        #logo {
+            position: absolute;
+            top: 40px;
+            left: 40px;
+            font-size: 28px;
+            pointer-events: auto;
+            cursor: pointer;
+        }
+
+        /* 右侧 Works */
+        #works-text {
+            position: absolute;
+            top: 40px;
+            right: 40px;
+            font-size: 28px;
+            pointer-events: auto;
+            cursor: pointer;
+        }
+
+        /* 摄像头开启提示 */
+        #camera-status {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            font-size: 12px;
+            color: #999;
+            pointer-events: auto;
+            cursor: pointer;
+            font-weight: normal;
+            letter-spacing: normal;
+        }
+
+        /* 详情页遮罩层 */
+        #detail-page {
+            display: none;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #ffffff;
+            z-index: 50;
+            overflow-y: auto;
+            cursor: pointer; /* 点击退回 */
+        }
+
+        /* 详情页内的无缝图片容器 */
+        .seamless-container {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .seamless-img {
+            width: 100%;
+            height: 800px; /* 占位高度 */
+            display: block;
+            margin: 0;
+            padding: 0;
+            border: none;
+        }
+
+        /* 详情页顶部提示 */
+        .detail-hint {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.5);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 14px;
+            letter-spacing: normal;
+            pointer-events: none;
+        }
+
+        #webcam-video {
+            display: none;
+        }
+    </style>
+    <!-- 引入 Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- 引入 MediaPipe Face Detection -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js" crossorigin="anonymous"></script>
+</head>
+<body>
+
+    <!-- UI 覆盖层 -->
+    <div id="ui-layer">
+        <div id="logo" class="heiti-text">REDesign</div>
+        <div id="works-text" class="heiti-text" title="点击上传PNG作品">Works</div>
+        
+        <!-- 隐藏的文件上传输入框 -->
+        <input type="file" id="upload-input" accept="image/png" multiple style="display: none;">
+
+        <div id="camera-status">启动头部追踪中...</div>
+    </div>
+
+    <!-- 详情页 -->
+    <div id="detail-page" title="点击任意位置退回">
+        <div class="detail-hint">点击任意位置退回</div>
+        <div class="seamless-container" id="seamless-content">
+            <!-- 动态注入的无缝图片占位 -->
+        </div>
+    </div>
+
+    <!-- 用于 MediaPipe 的隐藏视频流 -->
+    <video id="webcam-video" autoplay playsinline></video>
+
+    <!-- 3D 渲染脚本 -->
+    <script>
+        // --- 1. Three.js 场景初始化 ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xffffff); // 纯白背景
+        scene.fog = new THREE.Fog(0xffffff, 5, 40); // 纯白雾效，实现“远处的作品出现”
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(0, 0, 0); // 人物第一人称视角原点
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // --- 2. 创建作品占位图 (动态 Canvas 生成 Texture 以避免跨域和Base64) ---
+        function createPlaceholderTexture(text, bgColor) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 768;
+            const ctx = canvas.getContext('2d');
+            
+            ctx.fillStyle = bgColor;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.fillStyle = '#000000';
+            ctx.font = 'bold 40px "SimHei", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            return texture;
+        }
+
+        // 作品参数
+        const planes = [];
+        const planeCount = 12; // 场景中同时保持的作品数量
+        const zSpacing = 8;    // 作品之间的 Z 轴间距
+        const xOffset = 4;     // 作品距离中心路径的 X 轴偏移
+
+        const colors = ['#f1f1f1', '#e8e8e8', '#f5f5f5', '#eeeeee'];
+
+        for (let i = 0; i < planeCount; i++) {
+            const isLeft = i % 2 === 0;
+            const texture = createPlaceholderTexture(`Works ${i+1}`, colors[i % colors.length]);
+            const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
+            // 将作品的比例修改为 3:4 (宽度3，高度4)
+            const geometry = new THREE.PlaneGeometry(3, 4);
+            const plane = new THREE.Mesh(geometry, material);
+
+            // 左右交替摆放
+            plane.position.x = isLeft ? -xOffset : xOffset;
+            plane.position.y = 0;
+            // Z 轴向深处延伸
+            plane.position.z = - (i * zSpacing);
+            
+            // 微微朝向中心
+            plane.rotation.y = isLeft ? 0.2 : -0.2;
+
+            plane.userData = { id: i, isLeft: isLeft }; // 记录数据用于点击事件
+            scene.add(plane);
+            planes.push(plane);
+        }
+
+        // --- 3. 交互控制变量 ---
+        let targetZ = 0;           // 摄像机目标 Z 轴位置 (用于平滑滚动)
+        let targetRotY = 0;        // 摄像机目标 Y 轴旋转 (用于视角左右切换)
+        let isCameraTracking = false; // 是否成功开启摄像头追踪
+
+        // 鼠标滚轮/触控板事件：反转方向，向上滑动（deltaY > 0）前进
+        window.addEventListener('wheel', (event) => {
+            targetZ -= event.deltaY * 0.02;
+            
+            // 限制不能后退到起始点之后
+            if (targetZ > 0) targetZ = 0; 
+        });
+
+        // 触摸屏支持（滑动）：向上滑前进
+        let touchStartY = 0;
+        window.addEventListener('touchstart', e => touchStartY = e.touches[0].clientY);
+        window.addEventListener('touchmove', e => {
+            const touchY = e.touches[0].clientY;
+            const deltaY = touchStartY - touchY;
+            targetZ -= deltaY * 0.05; // 向上滑动时前进
+            if (targetZ > 0) targetZ = 0;
+            touchStartY = touchY;
+        });
+
+        // --- 作品上传逻辑 ---
+        const worksText = document.getElementById('works-text');
+        const uploadInput = document.getElementById('upload-input');
+        
+        // 点击 Works 触发上传
+        worksText.addEventListener('click', () => {
+            uploadInput.click();
+        });
+
+        // 处理文件选择并替换 3D 场景中的贴图
+        uploadInput.addEventListener('change', (event) => {
+            const files = event.target.files;
+            if (files.length === 0) return;
+
+            const textureLoader = new THREE.TextureLoader();
+            let fileIndex = 0;
+
+            // 依次替换场景中各个画作的贴图
+            for (let i = 0; i < planes.length && fileIndex < files.length; i++) {
+                const file = files[fileIndex];
+                const fileUrl = URL.createObjectURL(file);
+                
+                textureLoader.load(fileUrl, (texture) => {
+                    planes[i].material.map = texture;
+                    planes[i].material.needsUpdate = true;
+                });
+                fileIndex++;
+            }
+        });
+
+        // 鼠标移动事件（当未开启摄像头追踪时的后备方案：随鼠标左右平移切换视角）
+        window.addEventListener('mousemove', (event) => {
+            if (!isCameraTracking) {
+                // 将鼠标 X, Y 坐标映射到 -1 到 1
+                const mouseX = (event.clientX / window.innerWidth) * 2 - 1;
+                // 放大鼠标控制的视角范围
+                targetRotY = -mouseX * 0.8; 
+            }
+        });
+
+        // --- 4. 点击作品进入详情页 (Raycaster) ---
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        
+        window.addEventListener('click', (event) => {
+            // 如果详情页正在显示，点击则关闭
+            if (document.getElementById('detail-page').style.display === 'block') {
+                return; 
+            }
+
+            // 计算鼠标归一化坐标
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(planes);
+
+            if (intersects.length > 0) {
+                openDetailPage(intersects[0].object.userData.id);
+            }
+        });
+
+        // 生成详情页无缝图片并显示
+        function openDetailPage(id) {
+            const detailPage = document.getElementById('detail-page');
+            const container = document.getElementById('seamless-content');
+            container.innerHTML = ''; // 清空之前的内容
+
+            // 动态生成3张模拟无缝的占位图片
+            for (let i = 0; i < 3; i++) {
+                const canvas = document.createElement('canvas');
+                canvas.width = 1200;
+                canvas.height = 800;
+                const ctx = canvas.getContext('2d');
+                
+                // 渐变色模拟无缝连接
+                const gradient = ctx.createLinearGradient(0, 0, 0, 800);
+                if (i === 0) {
+                    gradient.addColorStop(0, '#e0e0e0');
+                    gradient.addColorStop(1, '#d0d0d0');
+                } else if (i === 1) {
+                    gradient.addColorStop(0, '#d0d0d0');
+                    gradient.addColorStop(1, '#c0c0c0');
+                } else {
+                    gradient.addColorStop(0, '#c0c0c0');
+                    gradient.addColorStop(1, '#b0b0b0');
+                }
+
+                ctx.fillStyle = gradient;
+                ctx.fillRect(0, 0, 1200, 800);
+                
+                ctx.fillStyle = '#000000';
+                ctx.font = 'bold 60px "SimHei"';
+                ctx.textAlign = 'center';
+                ctx.fillText(`Project ${id + 1} - Part ${i + 1}`, 600, 400);
+
+                const img = document.createElement('img');
+                img.src = canvas.toDataURL('image/jpeg', 0.8);
+                img.className = 'seamless-img';
+                container.appendChild(img);
+            }
+
+            // 淡入显示
+            detailPage.style.opacity = 0;
+            detailPage.style.display = 'block';
+            setTimeout(() => detailPage.style.opacity = 1, 10);
+            detailPage.scrollTop = 0;
+        }
+
+        // 点击详情页退回
+        document.getElementById('detail-page').addEventListener('click', function() {
+            this.style.display = 'none';
+        });
+
+        // --- 5. MediaPipe 摄像头人脸追踪 (视线左右切换) ---
+        const videoElement = document.getElementById('webcam-video');
+        const statusEl = document.getElementById('camera-status');
+
+        function initFaceTracking() {
+            if (typeof FaceDetection === 'undefined') {
+                statusEl.innerText = '追踪库加载失败，使用鼠标模式';
+                return;
+            }
+
+            const faceDetection = new FaceDetection({locateFile: (file) => {
+                return `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`;
+            }});
+
+            faceDetection.setOptions({
+                model: 'short',
+                minDetectionConfidence: 0.5
+            });
+
+            faceDetection.onResults((results) => {
+                if (results.detections.length > 0) {
+                    isCameraTracking = true;
+                    statusEl.innerText = '头部追踪：已连接';
+                    
+                    const bbox = results.detections[0].boundingBox;
+                    // xCenter 范围 0 到 1。居中为 0.5
+                    const faceX = bbox.xCenter - 0.5; 
+                    
+                    // 放大面部识别控制的视角范围
+                    targetRotY = faceX * 2.0; 
+                }
+            });
+
+            // 尝试启动摄像头
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then((stream) => {
+                    videoElement.srcObject = stream;
+                    const cameraUtils = new Camera(videoElement, {
+                        onFrame: async () => {
+                            await faceDetection.send({image: videoElement});
+                        },
+                        width: 640,
+                        height: 480
+                    });
+                    cameraUtils.start();
+                })
+                .catch((err) => {
+                    console.log("摄像头访问被拒绝或不可用:", err);
+                    statusEl.innerText = '摄像头未开启，使用鼠标模式';
+                    isCameraTracking = false;
+                });
+        }
+
+        // 窗口加载完成后初始化人脸追踪
+        window.addEventListener('load', () => {
+            initFaceTracking();
+        });
+
+
+        // --- 6. 渲染与动画循环 ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // 1. 平滑移动摄像机Z轴 (向前走)
+            camera.position.z += (targetZ - camera.position.z) * 0.1;
+            
+            // 2. 平滑转动摄像机视角 (头部追踪或鼠标)
+            camera.rotation.y += (targetRotY - camera.rotation.y) * 0.1;
+
+            // 3. 无限滚动逻辑 (近处的出画后，移到最远处)
+            // 保证两侧作品不断向人物靠近，形成无限延伸感
+            const recycleThreshold = camera.position.z + 5; // 在摄像机后方 5 的位置回收
+            const maxDepth = -(planeCount * zSpacing / 2); // 计算场景最大深度范围
+            
+            planes.forEach((plane, index) => {
+                if (plane.position.z > recycleThreshold) {
+                    // 如果跑到镜头后方了，就把它移到最前方（深度最远处）
+                    // 找到当前所有平面中最远的一个
+                    let minZ = 0;
+                    planes.forEach(p => { if(p.position.z < minZ) minZ = p.position.z; });
+                    plane.position.z = minZ - zSpacing;
+                }
+            });
+
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+        // --- 7. 响应窗口调整 ---
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+    </script>
+</body>
+</html>
