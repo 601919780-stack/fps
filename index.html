@@ -173,8 +173,6 @@
             'image0.png',
             'image0.png',
             'image0.png',
-            'image0.png',
-            'image0.png',
             'image0.png'
         ];
 
@@ -197,7 +195,8 @@
             const material = new THREE.MeshBasicMaterial({ 
                 color: 0xffffff, // 图片加载完成前显示的底色
                 map: texture, 
-                side: THREE.DoubleSide 
+                side: THREE.DoubleSide,
+                transparent: true // 开启透明，解决透明PNG显示黑底的问题
             });
             
             // 将作品的比例修改为 3:4 (宽度3，高度4)
