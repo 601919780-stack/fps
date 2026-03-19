@@ -164,38 +164,39 @@
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
 
-        // --- 2. 创建作品占位图 (动态 Canvas 生成 Texture 以避免跨域和Base64) ---
-        function createPlaceholderTexture(text, bgColor) {
-            const canvas = document.createElement('canvas');
-            canvas.width = 512;
-            canvas.height = 768;
-            const ctx = canvas.getContext('2d');
-            
-            ctx.fillStyle = bgColor;
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            
-            ctx.fillStyle = '#000000';
-            ctx.font = 'bold 40px "SimHei", sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(text, canvas.width / 2, canvas.height / 2);
-            
-            const texture = new THREE.CanvasTexture(canvas);
-            return texture;
-        }
+        // ==========================================
+        // 【修改这里 1】：替换为您自己的 3D 画廊图片路径
+        // ==========================================
+        // 填入您本地的相对路径（例如 './images/work1.png'）或网络链接
+        const myWorksImages = [
+            'https://via.placeholder.com/600x800/f1f1f1/000000?text=Your+Image+1',
+            'https://via.placeholder.com/600x800/e8e8e8/000000?text=Your+Image+2',
+            'https://via.placeholder.com/600x800/f5f5f5/000000?text=Your+Image+3',
+            'https://via.placeholder.com/600x800/eeeeee/000000?text=Your+Image+4'
+        ];
 
         // 作品参数
         const planes = [];
         const planeCount = 12; // 场景中同时保持的作品数量
         const zSpacing = 8;    // 作品之间的 Z 轴间距
         const xOffset = 4;     // 作品距离中心路径的 X 轴偏移
-
-        const colors = ['#f1f1f1', '#e8e8e8', '#f5f5f5', '#eeeeee'];
+        
+        const textureLoader = new THREE.TextureLoader();
 
         for (let i = 0; i < planeCount; i++) {
             const isLeft = i % 2 === 0;
-            const texture = createPlaceholderTexture(`Works ${i+1}`, colors[i % colors.length]);
-            const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
+            
+            // 获取图片路径（如果设置的作品数量大于图片数组长度，会自动循环使用图片）
+            const imageUrl = myWorksImages[i % myWorksImages.length];
+            
+            // 使用 Three.js 加载真实图片作为材质
+            const texture = textureLoader.load(imageUrl);
+            const material = new THREE.MeshBasicMaterial({ 
+                color: 0xffffff, // 图片加载完成前显示的底色
+                map: texture, 
+                side: THREE.DoubleSide 
+            });
+            
             // 将作品的比例修改为 3:4 (宽度3，高度4)
             const geometry = new THREE.PlaneGeometry(3, 4);
             const plane = new THREE.Mesh(geometry, material);
@@ -300,45 +301,44 @@
             }
         });
 
-        // 生成详情页无缝图片并显示
+        // ==========================================
+        // 【修改这里 2】：替换为您详情页的长图/组图路径
+        // ==========================================
+        // 按作品ID（从0开始）对应，每个作品可以有一张或多张需要无缝拼接的图片
+        const detailImages = [
+            // 作品 1 的详情页图片 (对应上面 myWorksImages 的第 1 张)
+            ['https://via.placeholder.com/1200x1600/e0e0e0/000000?text=Detail+1-1', 'https://via.placeholder.com/1200x800/d0d0d0/000000?text=Detail+1-2'],
+            
+            // 作品 2 的详情页图片 (对应上面 myWorksImages 的第 2 张)
+            ['https://via.placeholder.com/1200x2000/d0d0d0/000000?text=Detail+2-Full'],
+            
+            // 作品 3 
+            ['https://via.placeholder.com/1200x1000/c0c0c0/000000?text=Detail+3-1'],
+            
+            // 作品 4
+            ['https://via.placeholder.com/1200x1000/eeeeee/000000?text=Detail+4-1']
+        ];
+
+        // 生成详情页图片并显示
         function openDetailPage(id) {
             const detailPage = document.getElementById('detail-page');
             const container = document.getElementById('seamless-content');
             container.innerHTML = ''; // 清空之前的内容
 
-            // 动态生成3张模拟无缝的占位图片
-            for (let i = 0; i < 3; i++) {
-                const canvas = document.createElement('canvas');
-                canvas.width = 1200;
-                canvas.height = 800;
-                const ctx = canvas.getContext('2d');
-                
-                // 渐变色模拟无缝连接
-                const gradient = ctx.createLinearGradient(0, 0, 0, 800);
-                if (i === 0) {
-                    gradient.addColorStop(0, '#e0e0e0');
-                    gradient.addColorStop(1, '#d0d0d0');
-                } else if (i === 1) {
-                    gradient.addColorStop(0, '#d0d0d0');
-                    gradient.addColorStop(1, '#c0c0c0');
-                } else {
-                    gradient.addColorStop(0, '#c0c0c0');
-                    gradient.addColorStop(1, '#b0b0b0');
-                }
+            // 获取当前点击作品对应的详情图片组，若未配置则给个默认图
+            const currentDetailImages = detailImages[id % detailImages.length] || ['https://via.placeholder.com/1200x800/cccccc/000000?text=No+Detail+Image'];
 
-                ctx.fillStyle = gradient;
-                ctx.fillRect(0, 0, 1200, 800);
-                
-                ctx.fillStyle = '#000000';
-                ctx.font = 'bold 60px "SimHei"';
-                ctx.textAlign = 'center';
-                ctx.fillText(`Project ${id + 1} - Part ${i + 1}`, 600, 400);
-
+            // 遍历并插入真实的 <img> 标签
+            currentDetailImages.forEach(src => {
                 const img = document.createElement('img');
-                img.src = canvas.toDataURL('image/jpeg', 0.8);
+                img.src = src;
                 img.className = 'seamless-img';
+                
+                // 去除初始的固定占位高度，让真实图片按自身比例自适应，从而实现完全无缝衔接
+                img.style.height = 'auto'; 
+                
                 container.appendChild(img);
-            }
+            });
 
             // 淡入显示
             detailPage.style.opacity = 0;
